@@ -45,35 +45,18 @@ add_action( 'graphql_register_types', function() {
 			],
 		],
 		'outputFields' => [
-			'user_id' => [
-				'type' => 'String',
-			],
-			'name' => [
-				'type' => 'String',
-			],
-			'email' => [
-				'type' => 'String',
-			],
-			'phone' => [
-				'type' => 'String',
-			],
-			'logo' => [
-				'type' => 'String',
-			],
+				'status' => [
+					'type' => 'String',
+				],
+
 			],
 			'mutateAndGetPayload' => function( $input ) {
-			  insertCompany($input);
-			return [
-			'user_id' => $input['user_id'] ?? null,
-			'name' => $input['name'] ?? null,
-			'email' => $input['email'] ?? null,
-			'phone' => $input['phone'] ?? null,
-			'logo' => $input['logo'] ?? null,
+				insertCompany($input);
+				return [
+					'status' => 'Company Has Been Registered'
 				];
 			}
-		]);
-	
-
+	]);
 	register_graphql_mutation( 'addZohoCredentials', [
 		'inputFields' => [
 			'grant_token' => [
@@ -113,7 +96,7 @@ add_action( 'graphql_register_types', function() {
 	register_graphql_mutation( 'ZohoCreateContact', [
 		'inputFields' => [
 			'user_id' => [
-				'type' => [ 'non_null' => 'Integer' ],
+				'type' => [ 'non_null' => 'String' ],
 			],
 			'email' => [
 				'type' => 'String',
@@ -240,7 +223,7 @@ add_action( 'graphql_register_types', function() {
 	register_graphql_mutation( 'ZohoUpdateContact', [
 		'inputFields' => [
 			'user_id' => [
-				'type' => [ 'non_null' => 'Integer' ],
+				'type' => [ 'non_null' => 'String' ],
 			],
 			'firstName' => [
 				'type' => [ 'non_null' => 'String' ],
@@ -340,21 +323,21 @@ add_action( 'graphql_register_types', function() {
 			]
 		],
 		'mutateAndGetPayload' => function( $input ) {
-			$user_id=$input['user_id'];
-			unset($input['user_id']);
 			global $wpdb;
+			$user_id = base64_decode($input['user_id']); // the result is not a stringified number, neither printable
+			$string=str_replace('user:', '',$user_id  );
+			$user_id= json_decode($string);
+			$input['user_id']=$user_id;
+			unset($input['user_id']);	
 			$result = $wpdb->get_results('SELECT contactId FROM wp_zoho_contacts WHERE user_id='.$user_id.'');
 			$contact_id=$result[0]->contactId;
-			// return ['message'=>$contact_id];
-			// $input['contactId']=$contact_id;
-			
 			$zoho_response = CallAPIs('PATCH', "https://desk.zoho.com/api/v1/contacts/".$contact_id, $input);
 			$input['user_id']=$user_id;
 			$input['contactId']=$contact_id;
-			updateZohoContacts($input);
-		
+
 			if($zoho_response['status']==200)
-			{
+			{	
+				$wpdb->update('wp_zoho_contacts', $input, array( 'user_id' => $user_id ));
 				return [
 					'error' => null,
 					'message'=> 'Success',
@@ -385,7 +368,7 @@ add_action( 'graphql_register_types', function() {
 				'type' => [ 'non_null' => 'String' ],
 			], 
 			'user_id' => [
-				'type' => ['non_null' => 'Integer']
+				'type' => ['non_null' => 'String']
 			],
 			'departmentId' => [
 				'type'=> ['non_null' => 'String']
@@ -412,8 +395,12 @@ add_action( 'graphql_register_types', function() {
 			]
 		],
 		'mutateAndGetPayload' => function( $input ) {
-			$user_id=$input['user_id'];
 			global $wpdb;
+			$user_id = base64_decode($input['user_id']); // the result is not a stringified number, neither printable
+			$string=str_replace('user:', '',$user_id  );
+			$user_id= json_decode($string);
+			$input['user_id']=$user_id;
+
 			$result = $wpdb->get_results('SELECT contactId FROM wp_zoho_contacts WHERE user_id='.$user_id.'');
 			$input['contactId']=$result[0]->contactId;
 			$company_id=$input['company_id'];
@@ -446,6 +433,8 @@ add_action( 'graphql_register_types', function() {
 			}
 		}
 	]);
+
+	//ok
 	//zoho update ticket
 	register_graphql_mutation( 'ZohoUpdateticket', [
 		'inputFields' => [
@@ -515,16 +504,12 @@ add_action( 'graphql_register_types', function() {
 
 function insertCompany($input)
 {
+	
   	global $wpdb;
-  	$nb = base64_decode($input['user_id']); // the result is not a stringified number, neither printable
-	$user_id=settype($nb, 'int');
+	$user_id = base64_decode($input['user_id']); // the result is not a stringified number, neither printable
+	$string=str_replace('user:', '',$user_id  );
+	$user_id= json_decode($string);
 	$input['user_id']=$user_id;
-  	// $company=array();
-	// $company['user_id']=$user_id;
-	// $company['name']= $input['name'];
-	// $company['phone'] =$input['phone'];
-	// $company['email'] =$input['email'];
-	// $company['logo'] =$input['logo'] ;
 	$wpdb->insert('wp_zoho_companies', $input);
 	return $input;
 }
@@ -556,19 +541,40 @@ function insertZohoCredentialDetails($input)
 function updateZohoContacts($input)
 {
   	global $wpdb;
-    // $nb = base64_decode($user_id); // the result is not a stringified number, neither printable
-    // $user_id=settype($nb, 'int');
-	// $input['contactId']=$contact_id;
-	$user_id=$input['user_id'];
 	$wpdb->update('wp_zoho_contacts', $input, array( 'user_id' => $user_id ));
 	return $input;
 }
+
+
 function insertZohoContacts($input)
 {
   	global $wpdb;
-    // $nb = base64_decode($user_id); // the result is not a stringified number, neither printable
-    // $user_id=settype($nb, 'int');
-	// $input['contactId']=$contact_id;
+	$user_id = base64_decode($input['user_id']); // the result is not a stringified number, neither printable
+	$string=str_replace('user:', '',$user_id  );
+	$user_id= json_decode($string);
+	$input['user_id']=$user_id;
+	$results=$wpdb->get_results('SELECT user_id FROM wp_zoho_contacts');
+
+	if($results)
+	{
+		foreach ($results as $result)
+		{
+			if($result->user_id==$user_id)
+			{
+				$update=true;
+				break;
+			}
+		}
+		if($update)
+		{
+			$wpdb->update('wp_zoho_contacts', $input, array( 'user_id' => $user_id ));
+			return $input;
+		}else{
+			$wpdb->insert('wp_zoho_contacts', $input);
+			return $input;
+		}
+	}
+
 	$wpdb->insert('wp_zoho_contacts', $input);
 	return $input;
 
@@ -996,19 +1002,20 @@ register_graphql_field(
 			'type'=>[ 'list_of' => 'zohoContact' ],
 			'args' => [
 				'userId' => [
-					'type' => ['non_null'=>'Integer'],
+					'type' => ['non_null'=>'String'],
 				],
 			],
 			'resolve' => function($root, $args, $context, $info ) {
 				global $wpdb;
-				$user_id=$args['userId'];
+				$user_id = base64_decode($args['userId']); // the result is not a stringified number, neither printable
+				$string=str_replace('user:', '',$user_id  );
+				$user_id= json_decode($string);
 				$contact=$wpdb->get_results('SELECT * FROM wp_zoho_contacts WHERE user_id='.$user_id.'');
 				return $contact;
 			},	
 		],
 	);
 });
-
 //getZohoContacts
 add_action( 'graphql_register_types', function() {
 	register_graphql_field( 
@@ -1016,34 +1023,30 @@ add_action( 'graphql_register_types', function() {
 			'getZohoContacts', [
 				'type'=>[ 'list_of' => 'zohoContact' ],
 				'resolve' => function($root, $args, $context, $info ) {
-					$contacts=CallAPIs('GET', "https://desk.zoho.com/api/v1/contacts?from=1&limit=10");
-					return $contacts['body']->data;
+					global $wpdb;
+					$contact=$wpdb->get_results('SELECT * FROM wp_zoho_contacts');
+					return $contact;
+				//	$contacts=CallAPIs('GET', "https://desk.zoho.com/api/v1/contacts?from=1&limit=10");
+				//	return $contacts['body']->data;
 				},
 			],
 		);
 });
-
 //getCompanies
 add_action( 'graphql_register_types', function() {
 	register_graphql_field( 
 		'RootQuery', 
 			'getCompanies', [
 				'type'=>[ 'list_of' => 'zohoCompany' ],
-				'args' => [
-					'userId' => [
-					  'type' => ['non_null'=>'Integer'],
-					],
-				],
+
 				'resolve' => function($source, $args, $context, $info ) {
 					global $wpdb;
-					$user_id=$args['userId'];
-					$results=$wpdb->get_results('SELECT * FROM wp_zoho_companies WHERE  wp_zoho_companies.user_id='.$user_id.'');
+					$results=$wpdb->get_results('SELECT * FROM wp_zoho_companies');
 					return $results;
 				},
 			],
 		);
 });
-
 //getTicketsByCompanyId
 add_action( 'graphql_register_types', function() {
 	register_graphql_field( 
@@ -1064,22 +1067,23 @@ add_action( 'graphql_register_types', function() {
 			],
 		);
 });
-
 //getZohoCompaniesTicketsByUserId
 add_action( 'graphql_register_types', function() {
 	register_graphql_field( 
-		'RootQuery', 
+		'RootQuery',
 			'getZohoCompaniesTicketsByUserId', [
 				'type'=>[ 'list_of' => 'zohoTicketbyUserId' ],
 				// 'type'=>'Integer',
 				'args' => [
 					'userId' => [
-					  'type' => ['non_null'=>'Integer'],
+					  'type' => ['non_null'=>'String'],
 					],
 				],
 				'resolve' => function($source, $args, $context, $info ) {
 					global $wpdb;
-					$user_id=$args['userId'];
+					$user_id = base64_decode($args['userId']); // the result is not a stringified number, neither printable
+					$string=str_replace('user:', '',$user_id  );
+					$user_id= json_decode($string);
 					$arryObj=array();
 					$results=$wpdb->get_results('SELECT * FROM wp_zoho_companies RIGHT JOIN wp_zoho_tickets ON wp_zoho_companies.id = wp_zoho_tickets.company_id WHERE  wp_zoho_tickets.user_id='.$user_id.'');
 					$company_id=[];
