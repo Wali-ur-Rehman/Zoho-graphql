@@ -1,8 +1,8 @@
 
 <?php 
 /**
- * Plugin Name:       Zoho Token Details Graphql
- * Description:       Custom fields in Qraphql.
+ * Plugin Name:       Zoho with WPGraphql
+ * Description:       Zoho with wordpress and Graphql.
  * Version:           1.0
  * Requires at least: 5.2
  * Requires PHP:      7.2
@@ -54,6 +54,54 @@ add_action( 'graphql_register_types', function() {
 				insertCompany($input);
 				return [
 					'status' => 'Company Has Been Registered'
+				];
+			}
+	]);
+	register_graphql_mutation( 'ZohoUpdateComapny', [
+		'inputFields' => [
+			'id' => [
+				'type' => [ 'non_null' => 'Integer' ],
+			],
+			'name' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'email' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'phone' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'logo' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'zip' => [
+				'type' => 'String',
+			],
+			'city' => [
+				'type' => 'String',
+			],
+			'state' => [
+				'type' => 'String',
+			],
+			'website_url' => [
+				'type' => 'String',
+			],
+			'mailing_address' => [
+				'type' => 'String',
+			],
+		],
+		'outputFields' => [
+				'status' => [
+					'type' => 'String',
+				],
+
+			],
+			'mutateAndGetPayload' => function( $input ) {
+				global $wpdb;
+				$wpdb->update('wp_zoho_companies', $input, array( 'id' => $input['id'] ));
+			
+				return [
+					'status' => 'Company Has Been Updated'
 				];
 			}
 	]);
@@ -433,8 +481,6 @@ add_action( 'graphql_register_types', function() {
 			}
 		}
 	]);
-
-	//ok
 	//zoho update ticket
 	register_graphql_mutation( 'ZohoUpdateticket', [
 		'inputFields' => [
@@ -498,7 +544,50 @@ add_action( 'graphql_register_types', function() {
 			}
 		}
 	]);
-	
+
+//ok
+	register_graphql_mutation( 'ZohoCreateUser', [
+		'inputFields' => [
+			'name' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'password' => [
+				'type' => [ 'non_null' => 'String' ],
+			],
+			'email' => [
+				'type' => [ 'non_null' => 'String' ],
+			], 
+			'created_by'=>[
+				'type'=> ['non_null' => 'String']
+			],
+			'user_role'=>[
+				'type'=> ['non_null' => 'String']
+			],
+		],
+		'outputFields' => [
+			'status' => [
+				'type' =>'String'
+			] 
+		],
+		'mutateAndGetPayload' => function( $input ) {
+			$created_by = base64_decode($input['created_by']); // the result is not a stringified number, neither printable
+			$string=str_replace('user:', '',$created_by  );
+			$created_by= json_decode($string);
+			$input['created_by']=$created_by;
+
+			global $wpdb;
+			// $registered=$wpdb->insert('wp_users', $input);
+			
+			$registered=wp_create_user($input['name'],$input['password'],$input['email']);
+			if($registered){
+				$wpdb->update('wp_users', array('created_by'=>$created_by, 'role'=>$input['user_role']), array( 'id' => $registered ));
+				return ['status' => $registered];
+			}else {
+				return ['status' => 'Not registered'];
+			}
+						
+		}
+	]);
 } );
 
 
@@ -946,12 +1035,31 @@ function register_mutations_and_query_models() {
 		  'phone' => [
 			'type' => 'String',
 		  ],
-		  'company_id' => [
-			'type' => 'String',
+		  'id' => [
+			'type' => 'Integer',
 		  ],	
 		  'tickets' => [
 			'type' => ['list_of' =>'zohoTicket'],
 		  ],  
+		],
+	] );
+	register_graphql_object_type( 'zohoUser', [
+		'fields' => [
+			'id' => [
+				'type' => 'String',
+			],
+		  	'created_by' => [
+				'type' => 'String',
+		  	],
+		  	'name' => [
+				'type' => 'String',
+		  	],
+			'email' => [
+				'type' => 'String',
+			],
+			'role' => [
+				'type' => 'String',
+			],
 		],
 	] );
 };
@@ -1073,7 +1181,6 @@ add_action( 'graphql_register_types', function() {
 		'RootQuery',
 			'getZohoCompaniesTicketsByUserId', [
 				'type'=>[ 'list_of' => 'zohoTicketbyUserId' ],
-				// 'type'=>'Integer',
 				'args' => [
 					'userId' => [
 					  'type' => ['non_null'=>'String'],
@@ -1085,34 +1192,76 @@ add_action( 'graphql_register_types', function() {
 					$string=str_replace('user:', '',$user_id  );
 					$user_id= json_decode($string);
 					$arryObj=array();
-					$results=$wpdb->get_results('SELECT * FROM wp_zoho_companies RIGHT JOIN wp_zoho_tickets ON wp_zoho_companies.id = wp_zoho_tickets.company_id WHERE  wp_zoho_tickets.user_id='.$user_id.'');
-					$company_id=[];
-					$index=0;
-					foreach ($results as $ticket)
+					$companies=$wpdb->get_results('SELECT * FROM wp_zoho_companies WHERE user_id='.$user_id.'');
+		
+					foreach ($companies as $company)
 					{
-						$insert=true;
-						for($i=0; $i<count($company_id);$i++)
+						$ComapnyTickets=$wpdb->get_results('SELECT * FROM `wp_zoho_tickets` WHERE company_id='.$company->id.' LIMIT 3');
+						$company->tickets=array();
+						if($ComapnyTickets)
 						{
-							if($ticket->company_id==$company_id[$i])
-							{
-								$insert=false;
-								break;
-							}
-						}
-						if($insert==true)
-						{
-							$company_id[$index]=$ticket->company_id;
-							$index++;
-							$ticket->tickets=array();
-							$arryObj[]=clone $ticket;
-							$ComapnyTickets=$wpdb->get_results('SELECT * FROM `wp_zoho_tickets` WHERE company_id='.$ticket->company_id.' LIMIT 3');
-							$arryObj[]->tickets=$ComapnyTickets;
+							$company->tickets=$ComapnyTickets;
+						}else{
+							$company->tickets=NULL;
 						}
 					}
-					return $arryObj;
+					return $companies;
 				},
 			],
 		);
+});
+
+//getUsersByUserID
+add_action( 'graphql_register_types', function() {
+	register_graphql_field( 
+		'RootQuery', 
+		'getZohoUsersByUserId', [
+			'type'=>[ 'list_of' => 'zohoUser'],
+			'args' => [
+				'userId' => [
+					'type' => ['non_null'=>'String'],
+				],
+			],
+			'resolve' => function($root, $args, $context, $info ) {
+				global $wpdb;
+				$user_id = base64_decode($args['userId']); // the result is not a stringified number, neither printable
+				$string=str_replace('user:', '',$user_id  );
+				$user_id= json_decode($string);
+				$users=$wpdb->get_results('SELECT * FROM wp_users WHERE created_by='.$user_id.'');
+				foreach($users as $user){
+					$user->id=base64_encode($user->ID);
+					$user->create_by=base64_encode($user->create_by);
+					$user->name=$user->user_nicename;
+					$user->email=$user->user_email;
+				}
+				return $users;
+			},	
+		],
+	);
+});
+
+//getAdminsAndEditors
+add_action( 'graphql_register_types', function() {
+	register_graphql_field( 
+		'RootQuery', 
+		'getAdminsAndEditors', [
+			'type'=>[ 'list_of' => 'zohoUser'],
+			'resolve' => function($root, $args, $context, $info ) {
+				global $wpdb;
+				$user_id = base64_decode($args['userId']); // the result is not a stringified number, neither printable
+				$string=str_replace('user:', '',$user_id  );
+				$user_id= json_decode($string);
+				$users=$wpdb->get_results('SELECT * FROM wp_users WHERE role="editor" OR role="admin" ');
+				foreach($users as $user){
+					$user->id=base64_encode($user->ID);
+					$user->created_by=base64_encode($user->created_by);
+					$user->name=$user->user_nicename;
+					$user->email=$user->user_email;
+				}
+				return $users;
+			},	
+		],
+	);
 });
 
 
